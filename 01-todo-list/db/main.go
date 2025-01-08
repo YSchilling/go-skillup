@@ -3,14 +3,15 @@ package db
 import (
 	"01-todo-list/config"
 	"encoding/csv"
+	"errors"
 	"os"
 	"strconv"
 )
 
 type Task struct {
-	id    int
-	title string
-	done  bool
+	Id    int
+	Title string
+	Done  bool
 }
 
 func AddTask(title string) error {
@@ -25,11 +26,78 @@ func AddTask(title string) error {
 		id = 0
 	} else {
 		lastTask := tasks[len(tasks)-1]
-		id = lastTask.id + 1
+		id = lastTask.Id + 1
 	}
 
 	// add task
 	err = writeTaskToDB(Task{id, title, false})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func GetTasks() ([]Task, error) {
+	tasks, err := getAllTasksFromDB()
+	if err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
+}
+
+func CompleteTask(id int) error {
+	// get tasks
+	tasks, err := getAllTasksFromDB()
+	if err != nil {
+		return err
+	}
+
+	// modify tasks
+	foundTask := false
+	for i := range len(tasks) {
+		if tasks[i].Id == id {
+			tasks[i].Done = true
+			foundTask = true
+			break
+		}
+	}
+	if !foundTask {
+		return errors.New("Couldn't find task with the specified id: " + strconv.Itoa(id))
+	}
+
+	// save tasks
+	err = writeAllTasksToDB(tasks)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func DeleteTask(id int) error {
+	// get tasks
+	tasks, err := getAllTasksFromDB()
+	if err != nil {
+		return err
+	}
+
+	// modify tasks
+	foundTask := false
+	for i := range len(tasks) {
+		if tasks[i].Id == id {
+			tasks = append(tasks[:i], tasks[i+1:]...)
+			foundTask = true
+			break
+		}
+	}
+	if !foundTask {
+		return errors.New("Couldn't find task with the specified id: " + strconv.Itoa(id))
+	}
+
+	// save tasks
+	err = writeAllTasksToDB(tasks)
 	if err != nil {
 		return err
 	}
@@ -51,11 +119,43 @@ func writeTaskToDB(newTask Task) error {
 
 	// write task
 	if err := writer.Write([]string{
-		strconv.Itoa(newTask.id),
-		newTask.title,
-		strconv.FormatBool(newTask.done),
+		strconv.Itoa(newTask.Id),
+		newTask.Title,
+		strconv.FormatBool(newTask.Done),
 	}); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func writeAllTasksToDB(tasks []Task) error {
+	// open file
+	file, err := os.OpenFile(config.DBPath, os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// create writer
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// writer header
+	headers := []string{"id", "title", "done"}
+	if err := writer.Write(headers); err != nil {
+		return err
+	}
+
+	// write tasks
+	for i := range len(tasks) {
+		if err := writer.Write([]string{
+			strconv.Itoa(tasks[i].Id),
+			tasks[i].Title,
+			strconv.FormatBool(tasks[i].Done),
+		}); err != nil {
+			return err
+		}
 	}
 
 	return nil
